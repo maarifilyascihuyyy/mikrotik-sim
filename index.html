@@ -32,17 +32,16 @@ body.dark .row{background:#1e2836;border-color:#3a4a60}
 body.dark .row:nth-child(even){background:#243040}
 .row .rowacts{display:flex;gap:4px;flex:none}
 .row .rowacts button{min-height:30px;padding:0 8px}
-input,select,textarea{width:100%;min-height:38px;font:inherit;border:1px solid #707070;padding:4px 6px;background:#fff;color:#000;border-radius:3px}
+input,select,textarea{width:100%;min-height:38px;font:inherit;border:1px solid #707070;padding:4px 6px;background:#fff;color:#000;border-radius:3px;pointer-events:auto;touch-action:manipulation}
 body.dark input,body.dark select,body.dark textarea{background:#1e2836;color:#e0e0e0;border-color:#555}
-textarea{min-height:120px;font-family:monospace;font-size:12px}
 input[type=checkbox]{width:auto;min-height:0;margin-right:6px}
 label{display:block;margin:8px 0 2px;font-size:12px;color:#222;font-weight:600}
 body.dark label{color:#b0b0b0}
 .helper{font-size:11px;color:#666;margin-top:2px;font-weight:normal}
 body.dark .helper{color:#888}
 .chk{display:flex;align-items:center;margin-top:10px;font-size:13px}
-.dlg{position:fixed;inset:0;background:#0008;display:flex;align-items:center;justify-content:center;padding:16px;z-index:100}
-.dlg .win{margin:0;width:100%;max-width:420px;max-height:90vh;overflow:auto}
+.dlg{position:fixed;inset:0;background:#0008;display:flex;align-items:center;justify-content:center;padding:16px;z-index:1000;-webkit-overflow-scrolling:touch}
+.dlg .win{margin:0;width:100%;max-width:420px;max-height:88vh;overflow-y:auto;-webkit-overflow-scrolling:touch;position:relative;z-index:1001}
 .p{padding:10px}
 .ok{color:#0a7a0a}.no{color:#b00020}
 body.dark .ok{color:#4ade80}body.dark .no{color:#f87171}
@@ -56,13 +55,8 @@ body.dark .hint{color:#aaa}
 .prog{position:fixed;bottom:0;left:0;right:0;background:#0a246a;color:#fff;padding:8px 12px;font-size:12px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;z-index:50;box-shadow:0 -2px 8px #0004}
 .prog .bar-in{flex:1;height:6px;background:#1d2b44;border-radius:3px;margin:0 10px;overflow:hidden}
 .prog .bar-in div{height:100%;background:#4ade80;transition:width .3s}
-.glos{display:inline-block;border-bottom:1px dotted #0a246a;cursor:help;position:relative}
-.glos:hover::after{content:attr(data-tip);position:absolute;bottom:100%;left:0;background:#1d2b44;color:#fff;padding:6px 10px;border-radius:4px;font-size:11px;font-weight:normal;white-space:normal;width:220px;z-index:200;box-shadow:0 2px 8px #0006}
-.toast{position:fixed;top:60px;left:50%;transform:translateX(-50%);background:#1d2b44;color:#fff;padding:10px 16px;border-radius:4px;z-index:300;font-size:13px;box-shadow:0 4px 12px #0006;display:flex;gap:10px;align-items:center;animation:tin .2s}
+.toast{position:fixed;top:60px;left:50%;transform:translateX(-50%);background:#1d2b44;color:#fff;padding:10px 16px;border-radius:4px;z-index:2000;font-size:13px;box-shadow:0 4px 12px #0006;display:flex;gap:10px;align-items:center;max-width:90vw}
 .toast button{min-height:24px;padding:0 8px;font-size:11px;background:#3a4a60;color:#fff;border-color:#fff}
-@keyframes tin{from{opacity:0;transform:translate(-50%,-10px)}to{opacity:1;transform:translate(-50%,0)}}
-pre.cfg{background:#fff;padding:10px;font-size:11px;font-family:monospace;white-space:pre-wrap;word-break:break-all;margin:0}
-body.dark pre.cfg{background:#0d1117;color:#7ee787}
 </style>
 </head>
 <body>
@@ -88,7 +82,7 @@ if(!R.dns)R.dns=[];if(!R.fw)R.fw=[];
 
 function toast(msg,withClose){
   const t=document.createElement('div');t.className='toast';
-  t.innerHTML='<span>'+esc(msg)+'</span>'+(withClose?'<button>Tutup</button>':'');
+  t.innerHTML='<span>'+esc(msg)+'</span>'+(withClose?'<button type="button">Tutup</button>':'');
   document.body.appendChild(t);
   const kill=()=>{t.style.opacity='0';t.style.transition='opacity .2s';setTimeout(()=>t.remove(),200)};
   if(withClose)t.querySelector('button').onclick=kill;
@@ -100,16 +94,6 @@ function undo(){
   if(!undoStack.length){toast('Tidak ada yang bisa di-undo');return}
   R=JSON.parse(undoStack.pop());save();render();toast('Di-undo');
 }
-
-const GLOS={
-  masquerade:'NAT: ubah IP sumber paket agar klien bisa internet lewat IP router',
-  srcnat:'Chain untuk trafik keluar (source NAT)',
-  forward:'Chain untuk trafik yang melewati router (bukan ke router)',
-  CIDR:'Notasi prefix, misal /24 = 255.255.255.0',
-  pool:'Rentang IP yang dibagikan ke klien DHCP/hotspot',
-  dhcp:'Protokol pemberi IP otomatis ke klien',
-  '169.254':'IP link-local, muncul kalau DHCP gagal'
-};
 
 const S={
  addr:{m:'IP ▸ Addresses',t:'Address List',f:[['address','text','192.168.88.1/24','Format: IP/prefix, misal 192.168.88.1/24'],['interface','sel',IF]]},
@@ -162,49 +146,85 @@ const V={
 };
 
 const win=(t,b)=>`<div class="win"><div class="tb">${t}</div>${b}</div>`;
-function dlg(h){const d=document.createElement('div');d.className='dlg';d.id='dlg';d.innerHTML=h;document.body.appendChild(d);return d}
-function closeD(){const d=$('dlg');if(d)d.remove()}
+
+function dlg(h){
+  const old=document.getElementById('dlg');
+  if(old)old.remove();
+  const d=document.createElement('div');
+  d.className='dlg';
+  d.id='dlg';
+  d.innerHTML=h;
+  d.addEventListener('click',e=>{if(e.target===d)closeD()});
+  document.body.appendChild(d);
+  return d;
+}
+function closeD(){
+  const d=document.getElementById('dlg');
+  if(d)d.remove();
+}
 
 function form(k,idx){
- const s=S[k];
- const isEdit=typeof idx==='number';
- const existing=isEdit?R[k][idx]:{};
- const h=s.f.map(([n,t,x,ph])=>{
-  const hint=ph?`<div class="helper">${esc(ph)}</div>`:'';
-  const val=existing[n]!==undefined?existing[n]:'';
-  if(t==='text')return `<label>${n}</label><input id="f_${n}" value="${esc(val)}" placeholder="${esc(x)}" autocapitalize="none" autocomplete="off">${hint}`;
-  const o=t==='pool'?R.pool.map(p=>p.name):x;
-  if(!o.length)return `<label>${n}</label><div class="no" style="font-size:12px;padding:6px">Belum ada pilihan</div>`;
-  const cur=val||o[0];
-  return `<label>${n}</label><select id="f_${n}">${o.map(v=>`<option ${v===cur?'selected':''}>${esc(v)}</option>`).join('')}</select>${hint}`;
- }).join('');
- const d=dlg(`<div class="win"><div class="tb">${isEdit?'Edit':'New'} ${s.t}</div><div class="p">${h}<div id="err" class="no" style="margin-top:8px"></div></div><div class="bar"><button onclick="saveForm('${k}',${isEdit?idx:'null'})">OK</button><button onclick="closeD()">Cancel</button></div></div>`);
- setTimeout(()=>{const f=d.querySelector('input');if(f)f.focus()},50);
+  const s=S[k];
+  const isEdit=typeof idx==='number';
+  const existing=isEdit?R[k][idx]:{};
+  const h=s.f.map(([n,t,x,ph])=>{
+    const hint=ph?`<div class="helper">${esc(ph)}</div>`:'';
+    const val=existing[n]!==undefined?existing[n]:'';
+    if(t==='text'){
+      return `<label for="f_${n}">${n}</label>
+        <input id="f_${n}" type="text" value="${esc(val)}" placeholder="${esc(x)}"
+          autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false">${hint}`;
+    }
+    const o=t==='pool'?R.pool.map(p=>p.name):x;
+    if(!o.length){
+      return `<label>${n}</label><div class="no" style="font-size:12px;padding:6px">Belum ada pilihan. Buat dulu di menu terkait.</div>`;
+    }
+    const curVal=val||o[0];
+    return `<label for="f_${n}">${n}</label>
+      <select id="f_${n}">${o.map(v=>`<option value="${esc(v)}" ${v===curVal?'selected':''}>${esc(v)}</option>`).join('')}</select>${hint}`;
+  }).join('');
+  dlg(`<div class="win">
+    <div class="tb">${isEdit?'Edit':'New'} ${s.t}</div>
+    <div class="p">${h}<div id="err" class="no" style="margin-top:8px"></div></div>
+    <div class="bar" style="justify-content:flex-end">
+      <button type="button" onclick="saveForm('${k}',${isEdit?idx:'null'})">OK</button>
+      <button type="button" onclick="closeD()">Cancel</button>
+    </div>
+  </div>`);
+  requestAnimationFrame(()=>{
+    const first=document.querySelector('#dlg input, #dlg select');
+    if(first)first.focus({preventScroll:true});
+  });
 }
 function saveForm(k,idx){
- const o={};S[k].f.forEach(([n])=>{const el=$('f_'+n);o[n]=el?el.value.trim():''});
- const e=V[k](o);
- if(e){$('err').textContent=e;return}
- pushUndo();
- if(typeof idx==='number')R[k][idx]=o;
- else R[k].push(o);
- save();closeD();render();toast(typeof idx==='number'?'Diubah':'Ditambahkan');
+  const o={};
+  let missing=false;
+  S[k].f.forEach(([n])=>{
+    const el=document.getElementById('f_'+n);
+    if(!el){missing=true;return}
+    o[n]=el.value.trim();
+  });
+  if(missing){const e=document.getElementById('err');if(e)e.textContent='Form tidak lengkap.';return}
+  const e=V[k](o);
+  if(e){const el=document.getElementById('err');if(el)el.textContent=e;return}
+  pushUndo();
+  if(typeof idx==='number')R[k][idx]=o;
+  else R[k].push(o);
+  save();closeD();render();toast(typeof idx==='number'?'Diubah':'Ditambahkan');
 }
 function del(k,i){
- if(!confirm('Hapus item ini?'))return;
- pushUndo();R[k].splice(i,1);save();render();toast('Dihapus');
+  if(!confirm('Hapus item ini?'))return;
+  pushUndo();R[k].splice(i,1);save();render();toast('Dihapus');
 }
 function dup(k,i){
- pushUndo();
- const copy=JSON.parse(JSON.stringify(R[k][i]));
- if(copy.name)copy.name=copy.name+'-copy';
- if(copy.password)copy.password=copy.password;
- if(copy.address)copy.address=copy.address;
- R[k].push(copy);save();render();toast('Diduplikasi');
+  pushUndo();
+  const copy=JSON.parse(JSON.stringify(R[k][i]));
+  if(copy.name)copy.name=copy.name+'-copy';
+  R[k].push(copy);save();render();toast('Diduplikasi');
 }
 function reset(){
- if(!confirm('Reset SEMUA konfigurasi router?'))return;
- pushUndo();R=D();save();render();toast('Router direset');
+  if(!confirm('Reset SEMUA konfigurasi router?'))return;
+  pushUndo();R=D();save();render();toast('Router direset');
 }
 
 function sim(u,p,site,method){
@@ -300,8 +320,7 @@ function importCfg(ev){
 
 function genCLI(){
  const L=[];
- L.push('# Konfigurasi RouterOS dari state saat ini');
- L.push('');
+ L.push('# Konfigurasi RouterOS dari state saat ini');L.push('');
  if(R.addr.length){L.push('# IP Address');R.addr.forEach(a=>L.push('/ip address add address='+a.address+' interface='+a.interface));L.push('')}
  if(R.pool.length){L.push('# IP Pool');R.pool.forEach(p=>L.push('/ip pool add name='+p.name+' ranges='+p.ranges));L.push('')}
  if(R.dhcp.length){L.push('# DHCP Server');R.dhcp.forEach(d=>L.push('/ip dhcp-server add name='+d.name+' interface='+d.interface+' address-pool='+d['address-pool']+' disabled=no'));L.push('')}
@@ -345,7 +364,7 @@ function render(){
    let badge='';
    if(st&&st.ok)badge='<span class="badge">✓</span>';
    else if(st&&st.warn)badge='<span class="badge warn">!</span>';
-   return `<button class="${k===cur?'on':''}" onclick="cur='${k}';render()">${n}${badge}</button>`;
+   return `<button onclick="cur='${k}';render()" class="${k===cur?'on':''}">${n}${badge}</button>`;
  }).join('');
  let b='';
  if(cur==='if'){
@@ -358,29 +377,29 @@ function render(){
    <label>Situs yang dibuka</label><input id="cs" value="google.com" autocapitalize="none">
    <label>Protokol</label><select id="cm"><option value="https">HTTPS (443)</option><option value="http">HTTP (80)</option></select>
    <div class="bar" style="padding:10px 0;border:none">
-     <button onclick="runClient()">Sambungkan</button>
-     <button onclick="pingTest()">Ping</button>
-     <button onclick="clearClient()">Clear</button>
+     <button type="button" onclick="runClient()">Sambungkan</button>
+     <button type="button" onclick="pingTest()">Ping</button>
+     <button type="button" onclick="clearClient()">Clear</button>
    </div>
    <label>Host ping</label><input id="cp2" value="8.8.8.8" autocapitalize="none">
    <div id="co" style="margin-top:10px"></div>
   </div>`);
  }else if(cur==='cli'){
-  b=win('Konfigurasi CLI (RouterOS)',`<div class="bar"><button onclick="copyCLI()">Copy</button><button onclick="refreshCLI()">↻ Refresh</button></div><div class="cli" id="cliout">${esc(genCLI())}</div>`);
+  b=win('Konfigurasi CLI (RouterOS)',`<div class="bar"><button type="button" onclick="copyCLI()">Copy</button><button type="button" onclick="refreshCLI()">↻ Refresh</button></div><div class="cli" id="cliout">${esc(genCLI())}</div>`);
  }else if(cur==='ms'){
   const m=mission(),n=m.filter(x=>x[1]).length;
   const cfgSummary=[['IP',R.addr.length],['Pool',R.pool.length],['DHCP',R.dhcp.length],['Hotspot',R.hs.length],['User',R.user.length],['Firewall',R.fw.length],['DNS',R.dns.length]].map(([k,v])=>`<span style="display:inline-block;background:#0a246a;color:#fff;padding:2px 8px;border-radius:10px;margin:2px;font-size:11px">${k}: ${v}</span>`).join('');
   b=win('Misi',`<div class="p"><b>Skor ${n}/${m.length}</b><div class="hint" style="padding:4px 0">Buat hotspot di wlan1 sampai klien bisa login, lalu blokir ${T.join(' dan ')}.</div><div style="margin:8px 0">${cfgSummary}</div></div>`
    +m.map(x=>`<div class="row"><span>${x[1]?'✅':'⬜'} ${x[0]}</span></div>`).join('')
    +`<div class="bar" style="flex-wrap:wrap">
-     <button onclick="exportCfg()">⬇ Export</button>
-     <button onclick="$('impf').click()">⬆ Import</button>
-     <button onclick="reset()">Reset</button>
+     <button type="button" onclick="exportCfg()">⬇ Export</button>
+     <button type="button" onclick="document.getElementById('impf').click()">⬆ Import</button>
+     <button type="button" onclick="reset()">Reset</button>
      <input type="file" accept=".json" onchange="importCfg(event)" style="display:none" id="impf">
    </div>`
    +`<div class="bar" style="flex-wrap:wrap">
      <span style="font-size:12px;font-weight:bold">Troubleshoot:</span>
-     ${Object.entries(SCEN).map(([k,s])=>`<button onclick="loadScen('${k}')">${s.n}</button>`).join('')}
+     ${Object.entries(SCEN).map(([k,s])=>`<button type="button" onclick="loadScen('${k}')">${s.n}</button>`).join('')}
    </div>`);
  }else{
   const s=S[cur];
@@ -392,8 +411,8 @@ function render(){
     <label class="chk"><input type="checkbox" ${R.dnsSet.allow?'checked':''} onchange="R.dnsSet.allow=this.checked;save();render()">Allow Remote Requests</label>
     <div class="helper">Wajib aktif agar klien bisa resolve DNS</div>
    </div>`;
-  const rows=R[cur].map((o,i)=>`<div class="row"><span>${i}. ${Object.entries(o).filter(e=>e[1]).map(([a,v])=>`<b>${a}</b>=${esc(v)}`).join(' ')}</span><span class="rowacts"><button onclick="form('${cur}',${i})" title="Edit">✎</button><button onclick="dup('${cur}',${i})" title="Duplicate">⧉</button><button onclick="del('${cur}',${i})" title="Hapus">✕</button></span></div>`).join('')||'<div class="hint">(kosong)</div>';
-  b=win(s.t,top+`<div class="bar"><button onclick="form('${cur}')">＋ Add</button><span class="hint" style="padding:0">${R[cur].length} item</span></div>`+rows)+(H[cur]?`<div class="hint on-dark">${H[cur]}</div>`:'');
+  const rows=R[cur].map((o,i)=>`<div class="row"><span>${i}. ${Object.entries(o).filter(e=>e[1]).map(([a,v])=>`<b>${a}</b>=${esc(v)}`).join(' ')}</span><span class="rowacts"><button type="button" onclick="form('${cur}',${i})" title="Edit">✎</button><button type="button" onclick="dup('${cur}',${i})" title="Duplicate">⧉</button><button type="button" onclick="del('${cur}',${i})" title="Hapus">✕</button></span></div>`).join('')||'<div class="hint">(kosong)</div>';
+  b=win(s.t,top+`<div class="bar"><button type="button" onclick="form('${cur}')">＋ Add</button><span class="hint" style="padding:0">${R[cur].length} item</span></div>`+rows)+(H[cur]?`<div class="hint on-dark">${H[cur]}</div>`:'');
  }
  $('v').innerHTML=b;
  const m=mission(),n=m.filter(x=>x[1]).length;
@@ -406,7 +425,7 @@ if(localStorage.getItem('mtDark')==='1')document.body.classList.add('dark');
 
 document.addEventListener('keydown',e=>{
  if(e.key==='Escape')closeD();
- if(e.key==='Enter'&&$('dlg')&&document.activeElement.tagName==='INPUT'){
+ if(e.key==='Enter'&&document.getElementById('dlg')&&document.activeElement.tagName==='INPUT'){
    e.preventDefault();
    const btn=[...document.querySelectorAll('#dlg button')].find(b=>b.textContent==='OK');
    if(btn)btn.click();
