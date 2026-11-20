@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0a246a">
+<title>MikroTik Sim</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font:14px/1.4 Tahoma,Verdana,sans-serif;background:#5b7a9d;color:#000;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+.top{background:#1d2b44;color:#fff;padding:8px 12px;font-size:13px}
+.menu{display:flex;gap:6px;overflow-x:auto;padding:8px;background:#3d5a80}
+.menu button{flex:none}
+.menu button.on{background:#0a246a;color:#fff;border-color:#fff}
+.win{margin:8px;background:#ece9d8;border:2px solid #0a246a;border-radius:6px 6px 0 0;overflow:hidden}
+.tb{background:linear-gradient(90deg,#0a246a,#3a6ea5);color:#fff;padding:6px 10px;font-weight:bold}
+.bar{padding:6px;display:flex;gap:6px;align-items:center;border-bottom:1px solid #aaa}
+button{font:inherit;min-height:38px;padding:0 12px;border:1px solid #707070;background:linear-gradient(#fff,#d4d4d4);border-radius:3px;color:#000}
+.row{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid #ccc;background:#fff;font-size:13px;word-break:break-all}
+.row:nth-child(even){background:#f1f5fb}
+.row button{min-height:30px;padding:0 8px}
+input,select{width:100%;min-height:38px;font:inherit;border:1px solid #707070;padding:4px 6px;background:#fff;color:#000}
+input[type=checkbox]{width:auto;min-height:0;margin-right:6px}
+label{display:block;margin:8px 0 2px;font-size:12px;color:#222}
+.chk{display:flex;align-items:center;margin-top:10px;font-size:13px}
+.dlg{position:fixed;inset:0;background:#0008;display:flex;align-items:center;justify-content:center;padding:16px}
+.dlg .win{margin:0;width:100%;max-width:420px;max-height:90vh;overflow:auto}
+.p{padding:10px}
+.ok{color:#0a7a0a}.no{color:#b00020}
+.hint{font-size:12px;color:#444;padding:8px 10px}
+#co div{padding:3px 0}
+</style>
+</head>
+<body>
+<div class="top"><b>WinBox</b> &nbsp;admin@192.168.88.1 (RouterBOARD virtual)</div>
+<div class="menu" id="m"></div>
+<div id="v"></div>
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const IF=['ether1','ether2','wlan1'];
+const D=()=>({addr:[],pool:[],dhcp:[],hs:[],user:[],fw:[],dns:[],dnsSet:{servers:'',allow:false}});
+let R,cur='if';
+try{R=JSON.parse(localStorage.getItem('mt')||'')}catch(e){}
+if(!R||!R.addr)R=D();
+const save=()=>{try{localStorage.setItem('mt',JSON.stringify(R))}catch(e){}};
+
+const S={
+ addr:{m:'IP ▸ Addresses',t:'Address List',f:[['address','text','192.168.88.1/24'],['interface','sel',IF]]},
+ pool:{m:'IP ▸ Pool',t:'IP Pool',f:[['name','text','pool-hs'],['ranges','text','192.168.88.10-192.168.88.254']]},
+ dhcp:{m:'IP ▸ DHCP Server',t:'DHCP Servers',f:[['name','text','dhcp1'],['interface','sel',IF],['address-pool','pool']]},
+ hs:{m:'IP ▸ Hotspot',t:'Hotspot Servers',f:[['name','text','hotspot1'],['interface','sel',IF],['address-pool','pool']]},
+ user:{m:'Hotspot Users',t:'Hotspot Users',f:[['name','text','siswa1'],['password','text','123']]},
+ fw:{m:'IP ▸ Firewall',t:'Firewall Rules',f:[['chain','sel',['forward','srcnat']],['action','sel',['drop','reject','masquerade']],['content','text','mis. tiktok.com (opsional)'],['out-interface','sel',['','ether1','ether2','wlan1']]]},
+ dns:{m:'IP ▸ DNS',t:'DNS Static',f:[['name','text','facebook.com'],['address','text','127.0.0.1']]}
+};
+const H={
+ hs:'Tes klien virtual memakai wlan1, jadi pasang Hotspot Server di wlan1.',
+ fw:'Masquerade: chain=srcnat. Blokir situs: chain=forward, action=drop/reject, isi content. Di RouterOS asli, content hanya menangkap HTTP; untuk semua situs pakai DNS Static.',
+ dns:'Blokir lewat DNS Static: arahkan name ke 127.0.0.1. Isi DNS Servers dan centang Allow Remote Requests agar klien bisa resolve.'
+};
+const MN=[['if','Interfaces'],...Object.entries(S).map(([k,s])=>[k,s.m]),['cl','HP Klien'],['ms','Misi']];
+
+const ip2n=s=>{const p=s.split('.').map(Number);return p.length===4&&p.every(x=>Number.isInteger(x)&&x>=0&&x<=255)?p[0]*16777216+p[1]*65536+p[2]*256+p[3]:NaN};
+const inNet=(ip,cidr)=>{const[a,l]=cidr.split('/');const m=+l===0?0:(0xFFFFFFFF<<(32-l))>>>0;return((ip&m)>>>0)===((ip2n(a)&m)>>>0)};
+
+const V={
+ addr:o=>{const[a,l]=o.address.split('/');return isNaN(ip2n(a))||l===undefined||l===''||!(+l>=0&&+l<=32)?'Format salah, contoh 192.168.88.1/24':''},
+ pool:o=>{const r=o.ranges.split('-');return o.name&&r.length===2&&!isNaN(ip2n(r[0]))&&!isNaN(ip2n(r[1]))&&ip2n(r[0])<=ip2n(r[1])?'':'Isi name dan ranges, contoh 192.168.88.10-192.168.88.254'},
+ dhcp:o=>!o.name?'Isi name':!o['address-pool']?'Buat IP Pool dulu':'',
+ hs:o=>!o.name?'Isi name':!o['address-pool']?'Buat IP Pool dulu':'',
+ user:o=>o.name&&o.password?'':'Isi name dan password',
+ fw:o=>(o.action==='masquerade')!==(o.chain==='srcnat')?'masquerade hanya di chain srcnat; drop/reject di chain forward':'',
+ dns:o=>o.name&&!isNaN(ip2n(o.address))?'':'Isi name dan address (IP valid)'
+};
+
+const win=(t,b)=>`<div class="win"><div class="tb">${t}</div>${b}</div>`;
+const dlg=h=>{const d=document.createElement('div');d.className='dlg';d.id='dlg';d.innerHTML=h;document.body.appendChild(d)};
+const closeD=()=>{const d=$('dlg');if(d)d.remove()};
+
+function form(k){
+ const s=S[k];
+ const h=s.f.map(([n,t,x])=>{
+  if(t==='text')return `<label>${n}</label><input id="f_${n}" placeholder="${esc(x)}" autocapitalize="none" autocomplete="off">`;
+  const o=t==='pool'?R.pool.map(p=>p.name):x;
+  return `<label>${n}</label><select id="f_${n}">${o.map(v=>`<option>${esc(v)}</option>`).join('')}</select>`;
+ }).join('');
+ dlg(`<div class="win"><div class="tb">New ${s.t}</div><div class="p">${h}<div id="err" class="no" style="margin-top:8px"></div></div><div class="bar"><button onclick="add('${k}')">OK</button><button onclick="closeD()">Cancel</button></div></div>`);
+}
+function add(k){
+ const o={};S[k].f.forEach(([n])=>o[n]=$('f_'+n).value.trim());
+ const e=V[k](o);
+ if(e){$('err').textContent=e;return}
+ R[k].push(o);save();closeD();render();
+}
+function del(k,i){R[k].splice(i,1);save();render()}
+function reset(){if(confirm('Reset semua konfigurasi router?')){R=D();save();render()}}
+
+function sim(u,p,site){
+ const L=[],r={log:L,net:false,blocked:null};
+ const bad=m=>{L.push(['✗',m]);return r},ok=m=>L.push(['✓',m]);
+ const hs=R.hs.find(h=>h.interface==='wlan1');
+ if(!hs)return bad('SSID hotspot tidak terdeteksi. Buat Hotspot Server di interface wlan1.');
+ ok('SSID hotspot terdeteksi: '+hs.name);
+ const ad=R.addr.find(a=>a.interface==='wlan1'),dh=R.dhcp.find(d=>d.interface==='wlan1');
+ if(!ad)return bad('wlan1 belum punya IP address.');
+ if(!dh)return bad('Tidak ada DHCP Server di wlan1. HP tidak mendapat IP (169.254.x.x).');
+ const pl=R.pool.find(x=>x.name===dh['address-pool']);
+ if(!pl||!pl.ranges.split('-').every(x=>inNet(ip2n(x),ad.address)))return bad('Pool DHCP berada di luar subnet wlan1.');
+ ok('HP mendapat IP '+pl.ranges.split('-')[0]);
+ if(!R.user.some(x=>x.name===u&&x.password===p))return bad('Login hotspot gagal: user/password salah atau belum dibuat.');
+ ok('Login hotspot berhasil');
+ if(!R.fw.some(f=>f.chain==='srcnat'&&f.action==='masquerade'))return bad('Tidak ada internet: butuh NAT masquerade (chain=srcnat).');
+ if(R.fw.some(f=>f.chain==='forward'&&f.action!=='masquerade'&&!f.content))return bad('Rule firewall tanpa content memblokir semua trafik.');
+ if(!R.dnsSet.servers||!R.dnsSet.allow)return bad('DNS gagal: isi DNS Servers dan centang Allow Remote Requests.');
+ r.net=true;ok('Internet dan DNS siap');
+ const d=R.dns.find(x=>(site===x.name||site.endsWith('.'+x.name))&&/^(127\.0\.0\.1|0\.0\.0\.0)$/.test(x.address));
+ const f=R.fw.find(x=>x.chain==='forward'&&x.content&&site.includes(x.content));
+ r.blocked=d?'DNS Static':f?'Firewall content':null;
+ L.push(r.blocked?['⛔','Situs '+site+' DIBLOKIR oleh '+r.blocked]:['✓','Situs '+site+' terbuka']);
+ return r;
+}
+function runClient(){
+ const site=$('cs').value.trim().toLowerCase().replace(/^https?:\/\//,'').split('/')[0];
+ const r=sim($('cu').value.trim(),$('cp').value,site);
+ $('co').innerHTML=r.log.map(([i,m])=>`<div class="${i==='✓'?'ok':'no'}">${i} ${esc(m)}</div>`).join('');
+}
+
+const T=['facebook.com','tiktok.com'];
+function mission(){
+ const u=R.user[0]||{},t=s=>sim(u.name,u.password,s);
+ return [
+  ['IP address di wlan1',R.addr.some(a=>a.interface==='wlan1')],
+  ['IP Pool dibuat',R.pool.length>0],
+  ['DHCP Server di wlan1',R.dhcp.some(d=>d.interface==='wlan1')],
+  ['Hotspot Server di wlan1',R.hs.some(h=>h.interface==='wlan1')],
+  ['User hotspot dibuat',R.user.length>0],
+  ['NAT masquerade',R.fw.some(f=>f.chain==='srcnat'&&f.action==='masquerade')],
+  ['DNS Servers diisi dan Allow Remote Requests aktif',!!(R.dnsSet.servers&&R.dnsSet.allow)],
+  ['Klien bisa login dan membuka google.com',(x=>x.net&&!x.blocked)(t('google.com'))],
+  ...T.map(s=>['Situs '+s+' terblokir',(x=>x.net&&!!x.blocked)(t(s))])
+ ];
+}
+
+function render(){
+ $('m').innerHTML=MN.map(([k,n])=>`<button class="${k===cur?'on':''}" onclick="cur='${k}';render()">${n}</button>`).join('');
+ let b='';
+ if(cur==='if'){
+  b=win('Interface List',[['ether1','Uplink internet dari ISP (aktif)'],['ether2','Port LAN kabel'],['wlan1','Wi-Fi untuk klien hotspot; HP klien virtual tersambung di sini']].map(([a,c])=>`<div class="row"><b>${a}</b><span>${c}</span></div>`).join(''))
+   +'<div class="hint">Mulai dari IP ▸ Addresses, lalu ikuti urutan menu ke kanan. Cek hasilnya di Misi.</div>';
+ }else if(cur==='cl'){
+  b=win('HP Klien (virtual) – tersambung via wlan1',`<div class="p"><label>Username hotspot</label><input id="cu" autocapitalize="none"><label>Password</label><input id="cp" autocapitalize="none"><label>Situs yang dibuka</label><input id="cs" value="google.com" autocapitalize="none"><button style="margin-top:10px" onclick="runClient()">Sambungkan dan buka situs</button><div id="co" style="margin-top:10px"></div></div>`);
+ }else if(cur==='ms'){
+  const m=mission(),n=m.filter(x=>x[1]).length;
+  b=win('Misi: hotspot dan blokir situs',`<div class="p"><b>Skor ${n}/${m.length}</b><div class="hint" style="padding:4px 0">Buat hotspot di wlan1 sampai klien bisa login, lalu blokir ${T.join(' dan ')}.</div></div>`+m.map(x=>`<div class="row"><span>${x[1]?'✅':'⬜'} ${x[0]}</span></div>`).join('')+`<div class="bar"><button onclick="reset()">Reset router</button></div>`);
+ }else{
+  const s=S[cur];
+  let top='';
+  if(cur==='dns')top=`<div class="p" style="border-bottom:1px solid #aaa"><b>DNS Settings</b><label>Servers</label><input value="${esc(R.dnsSet.servers)}" placeholder="8.8.8.8" autocapitalize="none" onchange="R.dnsSet.servers=this.value.trim();save()"><label class="chk"><input type="checkbox" ${R.dnsSet.allow?'checked':''} onchange="R.dnsSet.allow=this.checked;save()">Allow Remote Requests</label></div>`;
+  const rows=R[cur].map((o,i)=>`<div class="row"><span>${i}. ${Object.entries(o).filter(e=>e[1]).map(([a,v])=>`<b>${a}</b>=${esc(v)}`).join(' ')}</span><button onclick="del('${cur}',${i})">✕</button></div>`).join('')||'<div class="hint">(kosong)</div>';
+  b=win(s.t,top+`<div class="bar"><button onclick="form('${cur}')">＋ Add</button><span class="hint">${R[cur].length} item</span></div>`+rows)+(H[cur]?`<div class="hint" style="color:#fff">${H[cur]}</div>`:'');
+ }
+ $('v').innerHTML=b;
+}
+render();
+</script>
+</body>
+</html>
