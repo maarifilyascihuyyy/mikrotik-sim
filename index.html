@@ -7,7 +7,7 @@
 <title>MikroTik Sim</title>
 <style>
 *{box-sizing:border-box}
-body{margin:0;font:14px/1.4 Tahoma,Verdana,sans-serif;background:#5b7a9d;color:#000;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+body{margin:0;font:14px/1.4 Tahoma,Verdana,sans-serif;background:#5b7a9d;color:#000;padding:env(safe-area-inset-top) 0 calc(env(safe-area-inset-bottom) + 50px)}
 body.dark{background:#1a2332;color:#e0e0e0}
 .top{background:#1d2b44;color:#fff;padding:8px 12px;font-size:13px;display:flex;justify-content:space-between;align-items:center;gap:8px}
 .top .acts{display:flex;gap:4px}
@@ -25,11 +25,13 @@ body.dark .bar{border-color:#555}
 button{font:inherit;min-height:38px;padding:0 12px;border:1px solid #707070;background:linear-gradient(#fff,#d4d4d4);border-radius:3px;color:#000;cursor:pointer}
 body.dark button{background:linear-gradient(#3a4a60,#2a3548);color:#e0e0e0;border-color:#555}
 button:active{transform:translateY(1px)}
+button:disabled{opacity:.5;cursor:not-allowed}
 .row{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid #ccc;background:#fff;font-size:13px;word-break:break-all}
 body.dark .row{background:#1e2836;border-color:#3a4a60}
 .row:nth-child(even){background:#f1f5fb}
 body.dark .row:nth-child(even){background:#243040}
-.row button{min-height:30px;padding:0 8px}
+.row .rowacts{display:flex;gap:4px;flex:none}
+.row .rowacts button{min-height:30px;padding:0 8px}
 input,select,textarea{width:100%;min-height:38px;font:inherit;border:1px solid #707070;padding:4px 6px;background:#fff;color:#000;border-radius:3px}
 body.dark input,body.dark select,body.dark textarea{background:#1e2836;color:#e0e0e0;border-color:#555}
 textarea{min-height:120px;font-family:monospace;font-size:12px}
@@ -51,22 +53,14 @@ body.dark .hint{color:#aaa}
 #co .ok::before{content:"✓ ";font-weight:bold}
 #co .no::before{content:"✗ ";font-weight:bold}
 .cli{background:#0d1117;color:#7ee787;font-family:'Courier New',monospace;font-size:12px;padding:10px;white-space:pre-wrap;word-break:break-all;border-radius:3px;line-height:1.5}
-.cli .cm{color:#8b949e}
-.cli .kw{color:#79c0ff}
-.cli .val{color:#a5d6ff}
 .prog{position:fixed;bottom:0;left:0;right:0;background:#0a246a;color:#fff;padding:8px 12px;font-size:12px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;z-index:50;box-shadow:0 -2px 8px #0004}
 .prog .bar-in{flex:1;height:6px;background:#1d2b44;border-radius:3px;margin:0 10px;overflow:hidden}
 .prog .bar-in div{height:100%;background:#4ade80;transition:width .3s}
-body{padding-bottom:50px}
 .glos{display:inline-block;border-bottom:1px dotted #0a246a;cursor:help;position:relative}
 .glos:hover::after{content:attr(data-tip);position:absolute;bottom:100%;left:0;background:#1d2b44;color:#fff;padding:6px 10px;border-radius:4px;font-size:11px;font-weight:normal;white-space:normal;width:220px;z-index:200;box-shadow:0 2px 8px #0006}
-.tabs{display:flex;border-bottom:2px solid #0a246a;background:#d4d4d4}
-body.dark .tabs{background:#2a3548;border-color:#4a90d9}
-.tabs button{flex:1;border:none;border-radius:0;background:transparent;border-bottom:2px solid transparent;font-weight:normal}
-.tabs button.on{background:#ece9d8;border-bottom-color:#0a246a;font-weight:bold}
-body.dark .tabs button.on{background:#2a3548;border-bottom-color:#4a90d9}
-.toast{position:fixed;top:60px;left:50%;transform:translateX(-50%);background:#1d2b44;color:#fff;padding:10px 20px;border-radius:4px;z-index:300;font-size:13px;box-shadow:0 4px 12px #0006;animation:tfade 2.5s forwards}
-@keyframes tfade{0%,80%{opacity:1}100%{opacity:0}}
+.toast{position:fixed;top:60px;left:50%;transform:translateX(-50%);background:#1d2b44;color:#fff;padding:10px 16px;border-radius:4px;z-index:300;font-size:13px;box-shadow:0 4px 12px #0006;display:flex;gap:10px;align-items:center;animation:tin .2s}
+.toast button{min-height:24px;padding:0 8px;font-size:11px;background:#3a4a60;color:#fff;border-color:#fff}
+@keyframes tin{from{opacity:0;transform:translate(-50%,-10px)}to{opacity:1;transform:translate(-50%,0)}}
 pre.cfg{background:#fff;padding:10px;font-size:11px;font-family:monospace;white-space:pre-wrap;word-break:break-all;margin:0}
 body.dark pre.cfg{background:#0d1117;color:#7ee787}
 </style>
@@ -92,23 +86,20 @@ try{R=JSON.parse(localStorage.getItem('mt')||'')}catch(e){}
 if(!R||!R.addr||!R.dnsSet)R=D();
 if(!R.dns)R.dns=[];if(!R.fw)R.fw=[];
 
-const toast=(msg)=>{const t=document.createElement('div');t.className='toast';t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),2500)};
-
-const save=()=>{
-  try{
-    localStorage.setItem('mt',JSON.stringify(R));
-  }catch(e){
-    toast('⚠ Gagal simpan: storage penuh');
-  }
-};
-const pushUndo=()=>{
-  undoStack.push(JSON.stringify(R));
-  if(undoStack.length>20)undoStack.shift();
-};
-const undo=()=>{
+function toast(msg,withClose){
+  const t=document.createElement('div');t.className='toast';
+  t.innerHTML='<span>'+esc(msg)+'</span>'+(withClose?'<button>Tutup</button>':'');
+  document.body.appendChild(t);
+  const kill=()=>{t.style.opacity='0';t.style.transition='opacity .2s';setTimeout(()=>t.remove(),200)};
+  if(withClose)t.querySelector('button').onclick=kill;
+  else setTimeout(kill,2500);
+}
+const save=()=>{try{localStorage.setItem('mt',JSON.stringify(R))}catch(e){toast('⚠ Gagal simpan: storage penuh',true)}};
+const pushUndo=()=>{undoStack.push(JSON.stringify(R));if(undoStack.length>20)undoStack.shift()};
+function undo(){
   if(!undoStack.length){toast('Tidak ada yang bisa di-undo');return}
   R=JSON.parse(undoStack.pop());save();render();toast('Di-undo');
-};
+}
 
 const GLOS={
   masquerade:'NAT: ubah IP sumber paket agar klien bisa internet lewat IP router',
@@ -117,10 +108,8 @@ const GLOS={
   CIDR:'Notasi prefix, misal /24 = 255.255.255.0',
   pool:'Rentang IP yang dibagikan ke klien DHCP/hotspot',
   dhcp:'Protokol pemberi IP otomatis ke klien',
-  'allow-remote':'Izinkan klien luar pakai DNS router ini',
   '169.254':'IP link-local, muncul kalau DHCP gagal'
 };
-const g=(term)=>`<span class="glos" data-tip="${esc(GLOS[term]||term)}">${esc(term)}</span>`;
 
 const S={
  addr:{m:'IP ▸ Addresses',t:'Address List',f:[['address','text','192.168.88.1/24','Format: IP/prefix, misal 192.168.88.1/24'],['interface','sel',IF]]},
@@ -133,8 +122,8 @@ const S={
 };
 const H={
  hs:'Tes klien virtual memakai wlan1, jadi pasang Hotspot Server di wlan1.',
- fw:'Masquerade: chain=srcnat, action=masquerade. Blokir situs: chain=forward, action=drop, isi content. Content hanya menangkap HTTP (port 80), HTTPS (443) butuh DNS Static.',
- dns:'Blokir via DNS Static: arahkan name ke 127.0.0.1. Isi DNS Servers (misal 8.8.8.8) dan centang Allow Remote Requests agar klien bisa resolve.'
+ fw:'Masquerade: chain=srcnat, action=masquerade. Blokir situs: chain=forward, action=drop, isi content.',
+ dns:'Blokir via DNS Static: arahkan name ke 127.0.0.1. Isi DNS Servers dan centang Allow Remote Requests.'
 };
 const MN=[['if','Interfaces'],...Object.entries(S).map(([k,s])=>[k,s.m]),['cli','CLI'],['cl','HP Klien'],['ms','Misi']];
 
@@ -149,42 +138,19 @@ const inNet=(ip,cidr)=>{
 };
 
 const V={
- addr:o=>{
-   if(!o.address)return 'Isi address';
-   const[a,l]=o.address.split('/');
-   if(isNaN(ip2n(a))||l===undefined||l===''||!(+l>=0&&+l<=32))return 'Format salah. Contoh: 192.168.88.1/24';
-   return '';
- },
+ addr:o=>{if(!o.address)return 'Isi address';const[a,l]=o.address.split('/');if(isNaN(ip2n(a))||l===undefined||l===''||!(+l>=0&&+l<=32))return 'Format salah. Contoh: 192.168.88.1/24';return ''},
  pool:o=>{
    if(!o.name)return 'Isi name pool';
    const r=o.ranges.split('-');
    if(r.length!==2||isNaN(ip2n(r[0]))||isNaN(ip2n(r[1])))return 'Format ranges salah. Contoh: 192.168.88.10-192.168.88.254';
    if(ip2n(r[0])>ip2n(r[1]))return 'IP awal harus ≤ IP akhir';
    const ad=R.addr.find(a=>a.interface==='wlan1');
-   if(ad){
-     const[a,l]=ad.address.split('/');
-     if(l&&!inNet(ip2n(r[0]),ad.address)&&!inNet(ip2n(r[1]),ad.address))
-       return 'Pool harus di dalam subnet wlan1 ('+ad.address+')';
-   }
+   if(ad){const[a,l]=ad.address.split('/');if(l&&!inNet(ip2n(r[0]),ad.address)&&!inNet(ip2n(r[1]),ad.address))return 'Pool harus di dalam subnet wlan1 ('+ad.address+')';}
    return '';
  },
- dhcp:o=>{
-   if(!o.name)return 'Isi name';
-   if(!o['address-pool'])return 'Buat IP Pool dulu di menu IP ▸ Pool';
-   if(R.dhcp.some(d=>d.interface===o.interface))return 'Interface '+o.interface+' sudah punya DHCP Server';
-   return '';
- },
- hs:o=>{
-   if(!o.name)return 'Isi name';
-   if(!o['address-pool'])return 'Buat IP Pool dulu';
-   if(R.hs.some(h=>h.interface===o.interface))return 'Interface '+o.interface+' sudah punya Hotspot Server';
-   return '';
- },
- user:o=>{
-   if(!o.name||!o.password)return 'Isi name dan password';
-   if(R.user.some(u=>u.name===o.name))return 'Username sudah dipakai';
-   return '';
- },
+ dhcp:o=>{if(!o.name)return 'Isi name';if(!o['address-pool'])return 'Buat IP Pool dulu';if(R.dhcp.some(d=>d.interface===o.interface))return 'Interface '+o.interface+' sudah punya DHCP';return ''},
+ hs:o=>{if(!o.name)return 'Isi name';if(!o['address-pool'])return 'Buat IP Pool dulu';if(R.hs.some(h=>h.interface===o.interface))return 'Interface '+o.interface+' sudah punya Hotspot';return ''},
+ user:o=>{if(!o.name||!o.password)return 'Isi name dan password';if(R.user.some(u=>u.name===o.name))return 'Username sudah dipakai';return ''},
  fw:o=>{
    if(o.action==='masquerade'&&o.chain!=='srcnat')return 'masquerade hanya di chain srcnat';
    if((o.action==='drop'||o.action==='reject')&&o.chain!=='forward')return 'drop/reject harus di chain forward';
@@ -192,48 +158,55 @@ const V={
    if(o.action==='masquerade'&&o.content)return 'Masquerade tidak butuh content, kosongkan';
    return '';
  },
- dns:o=>{
-   if(!o.name)return 'Isi name (domain)';
-   if(isNaN(ip2n(o.address)))return 'Address harus IP valid';
-   return '';
- }
+ dns:o=>{if(!o.name)return 'Isi name';if(isNaN(ip2n(o.address)))return 'Address harus IP valid';return ''}
 };
 
 const win=(t,b)=>`<div class="win"><div class="tb">${t}</div>${b}</div>`;
-const dlg=h=>{const d=document.createElement('div');d.className='dlg';d.id='dlg';d.innerHTML=h;document.body.appendChild(d)};
-const closeD=()=>{const d=$('dlg');if(d)d.remove()};
+function dlg(h){const d=document.createElement('div');d.className='dlg';d.id='dlg';d.innerHTML=h;document.body.appendChild(d);return d}
+function closeD(){const d=$('dlg');if(d)d.remove()}
 
-function form(k){
+function form(k,idx){
  const s=S[k];
+ const isEdit=typeof idx==='number';
+ const existing=isEdit?R[k][idx]:{};
  const h=s.f.map(([n,t,x,ph])=>{
   const hint=ph?`<div class="helper">${esc(ph)}</div>`:'';
-  if(t==='text')return `<label>${n}</label><input id="f_${n}" placeholder="${esc(x)}" autocapitalize="none" autocomplete="off">${hint}`;
+  const val=existing[n]!==undefined?existing[n]:'';
+  if(t==='text')return `<label>${n}</label><input id="f_${n}" value="${esc(val)}" placeholder="${esc(x)}" autocapitalize="none" autocomplete="off">${hint}`;
   const o=t==='pool'?R.pool.map(p=>p.name):x;
-  if(!o.length)return `<label>${n}</label><div class="no" style="font-size:12px;padding:6px">Belum ada pilihan. Buat dulu di menu terkait.</div>`;
-  return `<label>${n}</label><select id="f_${n}">${o.map(v=>`<option>${esc(v)}</option>`).join('')}</select>${hint}`;
+  if(!o.length)return `<label>${n}</label><div class="no" style="font-size:12px;padding:6px">Belum ada pilihan</div>`;
+  const cur=val||o[0];
+  return `<label>${n}</label><select id="f_${n}">${o.map(v=>`<option ${v===cur?'selected':''}>${esc(v)}</option>`).join('')}</select>${hint}`;
  }).join('');
- dlg(`<div class="win"><div class="tb">New ${s.t}</div><div class="p">${h}<div id="err" class="no" style="margin-top:8px"></div></div><div class="bar"><button onclick="add('${k}')">OK</button><button onclick="closeD()">Cancel</button></div></div>`);
- setTimeout(()=>{const f=document.querySelector('#dlg input');if(f)f.focus()},50);
+ const d=dlg(`<div class="win"><div class="tb">${isEdit?'Edit':'New'} ${s.t}</div><div class="p">${h}<div id="err" class="no" style="margin-top:8px"></div></div><div class="bar"><button onclick="saveForm('${k}',${isEdit?idx:'null'})">OK</button><button onclick="closeD()">Cancel</button></div></div>`);
+ setTimeout(()=>{const f=d.querySelector('input');if(f)f.focus()},50);
 }
-function add(k){
+function saveForm(k,idx){
  const o={};S[k].f.forEach(([n])=>{const el=$('f_'+n);o[n]=el?el.value.trim():''});
  const e=V[k](o);
  if(e){$('err').textContent=e;return}
  pushUndo();
- R[k].push(o);save();closeD();render();toast('Ditambahkan');
+ if(typeof idx==='number')R[k][idx]=o;
+ else R[k].push(o);
+ save();closeD();render();toast(typeof idx==='number'?'Diubah':'Ditambahkan');
 }
 function del(k,i){
  if(!confirm('Hapus item ini?'))return;
+ pushUndo();R[k].splice(i,1);save();render();toast('Dihapus');
+}
+function dup(k,i){
  pushUndo();
- R[k].splice(i,1);save();render();
+ const copy=JSON.parse(JSON.stringify(R[k][i]));
+ if(copy.name)copy.name=copy.name+'-copy';
+ if(copy.password)copy.password=copy.password;
+ if(copy.address)copy.address=copy.address;
+ R[k].push(copy);save();render();toast('Diduplikasi');
 }
 function reset(){
- if(!confirm('Reset SEMUA konfigurasi router? Semua data akan hilang.'))return;
- pushUndo();
- R=D();save();render();toast('Router direset');
+ if(!confirm('Reset SEMUA konfigurasi router?'))return;
+ pushUndo();R=D();save();render();toast('Router direset');
 }
 
-// ---- simulasi ----
 function sim(u,p,site,method){
  method=(method||'https').toLowerCase();
  const L=[],r={log:L,net:false,blocked:null,dhcpFail:false};
@@ -242,53 +215,53 @@ function sim(u,p,site,method){
  if(!hs)return bad('SSID hotspot tidak terdeteksi di wlan1. Buat Hotspot Server di wlan1 dulu.');
  ok('SSID hotspot terdeteksi: '+hs.name);
  const ad=R.addr.find(a=>a.interface==='wlan1'),dh=R.dhcp.find(d=>d.interface==='wlan1');
- if(!ad)return bad('wlan1 belum punya IP address. Tambah di IP ▸ Addresses.');
+ if(!ad)return bad('wlan1 belum punya IP address.');
  if(!dh){r.dhcpFail=true;return bad('Tidak ada DHCP Server di wlan1. HP tidak dapat IP (169.254.x.x).')}
  const pl=R.pool.find(x=>x.name===dh['address-pool']);
- if(!pl||!pl.ranges.split('-').every(x=>inNet(ip2n(x),ad.address)))return bad('Pool DHCP di luar subnet wlan1 ('+ad.address+'). Perbaiki di IP ▸ Pool.');
+ if(!pl||!pl.ranges.split('-').every(x=>inNet(ip2n(x),ad.address)))return bad('Pool DHCP di luar subnet wlan1.');
  ok('HP mendapat IP '+pl.ranges.split('-')[0]);
- if(!R.user.some(x=>x.name===u&&x.password===p))return bad('Login hotspot gagal: user/password salah atau belum dibuat di Hotspot Users.');
+ if(!R.user.some(x=>x.name===u&&x.password===p))return bad('Login hotspot gagal: user/password salah.');
  ok('Login hotspot berhasil');
- if(!R.fw.some(f=>f.chain==='srcnat'&&f.action==='masquerade'))return bad('Tidak ada internet: butuh NAT masquerade (chain=srcnat, action=masquerade).');
- if(R.fw.some(f=>f.chain==='forward'&&f.action!=='masquerade'&&!f.content))return bad('Rule firewall forward tanpa content memblokir SEMUA trafik. Isi content atau hapus.');
- if(!R.dnsSet.servers||!R.dnsSet.allow)return bad('DNS gagal: isi DNS Servers (misal 8.8.8.8) dan centang Allow Remote Requests.');
+ if(!R.fw.some(f=>f.chain==='srcnat'&&f.action==='masquerade'))return bad('Tidak ada internet: butuh NAT masquerade (chain=srcnat).');
+ if(R.fw.some(f=>f.chain==='forward'&&f.action!=='masquerade'&&!f.content))return bad('Rule firewall forward tanpa content memblokir SEMUA trafik.');
+ if(!R.dnsSet.servers||!R.dnsSet.allow)return bad('DNS gagal: isi DNS Servers dan centang Allow Remote Requests.');
  r.net=true;ok('Internet dan DNS siap');
  const d=R.dns.find(x=>(site===x.name||site.endsWith('.'+x.name))&&/^(127\.0\.0\.1|0\.0\.0\.0)$/.test(x.address));
  const f=R.fw.find(x=>x.chain==='forward'&&x.content&&site.includes(x.content));
- if(f&&method==='https'){
-   r.blocked=null;
-   ok('Rule content "'+f.content+'" TIDAK memblokir HTTPS (port 443). Pakai DNS Static untuk blokir total.');
- }else if(d){
-   r.blocked='DNS Static';
- }else if(f){
-   r.blocked='Firewall content';
- }
+ if(f&&method==='https'){ok('Rule content "'+f.content+'" tidak memblokir HTTPS. Pakai DNS Static.')}
+ else if(d){r.blocked='DNS Static'}
+ else if(f){r.blocked='Firewall content'}
  L.push(r.blocked?['⛔','Situs '+site+' DIBLOKIR oleh '+r.blocked]:['✓','Situs '+site+' terbuka']);
  return r;
 }
 function runClient(){
  const site=$('cs').value.trim().toLowerCase().replace(/^https?:\/\//,'').split('/')[0];
  if(!site){$('co').innerHTML='<div class="no">Isi dulu situs yang mau dibuka</div>';return}
- const method=$('cm')?$('cm').value:'https';
+ const method=$('cm').value;
  const r=sim($('cu').value.trim(),$('cp').value,site,method);
- $('co').innerHTML=r.log.map(([i,m])=>`<div class="${i==='✓'?'ok':'no'}">${esc(m)}</div>`).join('');
- if(r.dhcpFail)$('co').innerHTML='<div class="no">Klien: IP 169.254.x.x (DHCP gagal)</div>'+$('co').innerHTML;
+ let html=r.log.map(([i,m])=>`<div class="${i==='✓'?'ok':'no'}">${esc(m)}</div>`).join('');
+ if(r.dhcpFail)html='<div class="no">Klien: IP 169.254.x.x (DHCP gagal)</div>'+html;
+ $('co').innerHTML=html;
 }
 function pingTest(){
- const host=$('cp2')?$('cp2').value.trim():'8.8.8.8';
- if(!host){toast('Isi host dulu');return}
+ const host=$('cp2').value.trim()||'8.8.8.8';
  const u=R.user[0]||{};
  const r=sim(u.name,u.password,'google.com','https');
  const out=[];
- if(!r.net){out.push('<div class="no">Ping gagal: jaringan belum siap</div>')}
+ if(!r.net)out.push('<div class="no">Ping gagal: jaringan belum siap</div>');
  else{
    for(let i=1;i<=4;i++)out.push('<div class="ok">64 bytes from '+esc(host)+': icmp_seq='+i+' ttl=64 time='+(Math.random()*20+5).toFixed(1)+' ms</div>');
    out.push('<div class="ok">4 packets transmitted, 4 received, 0% packet loss</div>');
  }
  $('co').innerHTML=out.join('');
 }
+function clearClient(){
+ $('co').innerHTML='';
+ if($('cu'))$('cu').value='';
+ if($('cp'))$('cp').value='';
+ toast('Form klien dibersihkan');
+}
 
-// ---- misi ----
 const T=['facebook.com','tiktok.com'];
 function mission(){
  const u=R.user[0]||{},t=s=>sim(u.name,u.password,s,'https');
@@ -305,7 +278,6 @@ function mission(){
  ];
 }
 
-// ---- export/import ----
 function exportCfg(){
  const blob=new Blob([JSON.stringify(R,null,2)],{type:'application/json'});
  const a=document.createElement('a');a.href=URL.createObjectURL(blob);
@@ -321,92 +293,47 @@ function importCfg(ev){
      if(!j.addr)throw new Error('Format tidak valid');
      if(!j.dns)j.dns=[];if(!j.fw)j.fw=[];if(!j.dnsSet)j.dnsSet={servers:'',allow:false};
      pushUndo();R=j;save();render();toast('Config diimport');
-   }catch(err){toast('Gagal import: '+err.message)}
+   }catch(err){toast('Gagal import: '+err.message,true)}
  };
  rd.readAsText(f);
 }
 
-// ---- CLI ----
 function genCLI(){
  const L=[];
  L.push('# Konfigurasi RouterOS dari state saat ini');
  L.push('');
- if(R.addr.length){
-   L.push('# IP Address');
-   R.addr.forEach(a=>L.push('/ip address add address='+a.address+' interface='+a.interface));
-   L.push('');
- }
- if(R.pool.length){
-   L.push('# IP Pool');
-   R.pool.forEach(p=>L.push('/ip pool add name='+p.name+' ranges='+p.ranges));
-   L.push('');
- }
- if(R.dhcp.length){
-   L.push('# DHCP Server');
-   R.dhcp.forEach(d=>L.push('/ip dhcp-server add name='+d.name+' interface='+d.interface+' address-pool='+d['address-pool']+' disabled=no'));
-   L.push('');
- }
- if(R.hs.length){
-   L.push('# Hotspot Server');
-   R.hs.forEach(h=>L.push('/ip hotspot add name='+h.name+' interface='+h.interface+' address-pool='+h['address-pool']+' disabled=no'));
-   L.push('');
- }
- if(R.user.length){
-   L.push('# Hotspot User');
-   R.user.forEach(u=>L.push('/ip hotspot user add name='+u.name+' password='+u.password));
-   L.push('');
- }
- if(R.fw.length){
-   L.push('# Firewall');
-   R.fw.forEach(f=>{
-     const parts=['/ip firewall filter add chain='+f.chain,'action='+f.action];
-     if(f.content)parts.push('content="'+f.content+'"');
-     if(f['out-interface'])parts.push('out-interface='+f['out-interface']);
-     L.push(parts.join(' '));
-   });
-   L.push('');
- }
- if(R.dnsSet.servers||R.dnsSet.allow){
-   L.push('# DNS');
-   if(R.dnsSet.servers)L.push('/ip dns set servers='+R.dnsSet.servers);
-   if(R.dnsSet.allow)L.push('/ip dns set allow-remote-requests=yes');
-   L.push('');
- }
- if(R.dns.length){
-   L.push('# DNS Static');
-   R.dns.forEach(d=>L.push('/ip dns static add name='+d.name+' address='+d.address));
-   L.push('');
- }
+ if(R.addr.length){L.push('# IP Address');R.addr.forEach(a=>L.push('/ip address add address='+a.address+' interface='+a.interface));L.push('')}
+ if(R.pool.length){L.push('# IP Pool');R.pool.forEach(p=>L.push('/ip pool add name='+p.name+' ranges='+p.ranges));L.push('')}
+ if(R.dhcp.length){L.push('# DHCP Server');R.dhcp.forEach(d=>L.push('/ip dhcp-server add name='+d.name+' interface='+d.interface+' address-pool='+d['address-pool']+' disabled=no'));L.push('')}
+ if(R.hs.length){L.push('# Hotspot Server');R.hs.forEach(h=>L.push('/ip hotspot add name='+h.name+' interface='+h.interface+' address-pool='+h['address-pool']+' disabled=no'));L.push('')}
+ if(R.user.length){L.push('# Hotspot User');R.user.forEach(u=>L.push('/ip hotspot user add name='+u.name+' password='+u.password));L.push('')}
+ if(R.fw.length){L.push('# Firewall');R.fw.forEach(f=>{const parts=['/ip firewall filter add chain='+f.chain,'action='+f.action];if(f.content)parts.push('content="'+f.content+'"');if(f['out-interface'])parts.push('out-interface='+f['out-interface']);L.push(parts.join(' '))});L.push('')}
+ if(R.dnsSet.servers||R.dnsSet.allow){L.push('# DNS');if(R.dnsSet.servers)L.push('/ip dns set servers='+R.dnsSet.servers);if(R.dnsSet.allow)L.push('/ip dns set allow-remote-requests=yes');L.push('')}
+ if(R.dns.length){L.push('# DNS Static');R.dns.forEach(d=>L.push('/ip dns static add name='+d.name+' address='+d.address));L.push('')}
  if(L.length===1)L.push('(belum ada konfigurasi)');
  return L.join('\n');
 }
+function copyCLI(){
+ const t=genCLI();
+ if(navigator.clipboard){navigator.clipboard.writeText(t).then(()=>toast('CLI dicopy'),()=>toast('Gagal copy',true))}
+ else toast('Copy manual dari tab CLI',true);
+}
+function refreshCLI(){const el=$('cliout');if(el)el.textContent=genCLI();toast('CLI di-refresh')}
 
-// ---- troubleshoot presets ----
 const SCEN={
- nat:{n:'NAT salah chain',
-  do:()=>{R=D();R.addr=[{address:'192.168.88.1/24',interface:'wlan1'}];R.pool=[{name:'pool-hs',ranges:'192.168.88.10-192.168.88.254'}];R.dhcp=[{name:'dhcp1',interface:'wlan1','address-pool':'pool-hs'}];R.hs=[{name:'hotspot1',interface:'wlan1','address-pool':'pool-hs'}];R.user=[{name:'siswa1',password:'123'}];R.fw=[{chain:'forward',action:'masquerade',content:'','out-interface':'ether1'}];R.dnsSet={servers:'8.8.8.8',allow:true};}
- },
- dns:{n:'DNS belum allow remote',
-  do:()=>{R=D();R.addr=[{address:'192.168.88.1/24',interface:'wlan1'}];R.pool=[{name:'pool-hs',ranges:'192.168.88.10-192.168.88.254'}];R.dhcp=[{name:'dhcp1',interface:'wlan1','address-pool':'pool-hs'}];R.hs=[{name:'hotspot1',interface:'wlan1','address-pool':'pool-hs'}];R.user=[{name:'siswa1',password:'123'}];R.fw=[{chain:'srcnat',action:'masquerade',content:'','out-interface':'ether1'}];R.dnsSet={servers:'8.8.8.8',allow:false};}
- },
- pool:{n:'Pool di luar subnet',
-  do:()=>{R=D();R.addr=[{address:'192.168.88.1/24',interface:'wlan1'}];R.pool=[{name:'pool-hs',ranges:'10.10.10.10-10.10.10.200'}];R.dhcp=[{name:'dhcp1',interface:'wlan1','address-pool':'pool-hs'}];R.hs=[{name:'hotspot1',interface:'wlan1','address-pool':'pool-hs'}];R.user=[{name:'siswa1',password:'123'}];R.fw=[{chain:'srcnat',action:'masquerade',content:'','out-interface':'ether1'}];R.dnsSet={servers:'8.8.8.8',allow:true};}
- }
+ nat:{n:'NAT salah chain',do:()=>{R=D();R.addr=[{address:'192.168.88.1/24',interface:'wlan1'}];R.pool=[{name:'pool-hs',ranges:'192.168.88.10-192.168.88.254'}];R.dhcp=[{name:'dhcp1',interface:'wlan1','address-pool':'pool-hs'}];R.hs=[{name:'hotspot1',interface:'wlan1','address-pool':'pool-hs'}];R.user=[{name:'siswa1',password:'123'}];R.fw=[{chain:'forward',action:'masquerade',content:'','out-interface':'ether1'}];R.dnsSet={servers:'8.8.8.8',allow:true}}},
+ dns:{n:'DNS belum allow remote',do:()=>{R=D();R.addr=[{address:'192.168.88.1/24',interface:'wlan1'}];R.pool=[{name:'pool-hs',ranges:'192.168.88.10-192.168.88.254'}];R.dhcp=[{name:'dhcp1',interface:'wlan1','address-pool':'pool-hs'}];R.hs=[{name:'hotspot1',interface:'wlan1','address-pool':'pool-hs'}];R.user=[{name:'siswa1',password:'123'}];R.fw=[{chain:'srcnat',action:'masquerade',content:'','out-interface':'ether1'}];R.dnsSet={servers:'8.8.8.8',allow:false}}},
+ pool:{n:'Pool di luar subnet',do:()=>{R=D();R.addr=[{address:'192.168.88.1/24',interface:'wlan1'}];R.pool=[{name:'pool-hs',ranges:'10.10.10.10-10.10.10.200'}];R.dhcp=[{name:'dhcp1',interface:'wlan1','address-pool':'pool-hs'}];R.hs=[{name:'hotspot1',interface:'wlan1','address-pool':'pool-hs'}];R.user=[{name:'siswa1',password:'123'}];R.fw=[{chain:'srcnat',action:'masquerade',content:'','out-interface':'ether1'}];R.dnsSet={servers:'8.8.8.8',allow:true}}}
 };
 function loadScen(k){
  if(!confirm('Muat skenario "'+SCEN[k].n+'"? Konfigurasi saat ini akan diganti.'))return;
- pushUndo();SCEN[k].do();save();cur='ms';render();toast('Skenario dimuat. Perbaiki lalu cek Misi.');
+ pushUndo();SCEN[k].do();save();cur='ms';render();toast('Skenario dimuat');
 }
 
-// ---- render ----
 function statusOf(k){
- if(k==='if')return {ok:true,warn:false};
- if(k==='cl'||k==='cli'||k==='ms')return null;
+ if(k==='if'||k==='cl'||k==='cli'||k==='ms')return null;
+ if(k==='dns'){const okDns=R.dns.length>0||(R.dnsSet.servers&&R.dnsSet.allow);return {ok:okDns,warn:!okDns}}
  const arr=R[k];
- if(k==='dns'){
-   const okDns=R.dns.length>0||(R.dnsSet.servers&&R.dnsSet.allow);
-   return {ok:okDns,warn:!okDns};
- }
  if(!arr||!arr.length)return {ok:false,warn:true};
  const allOk=arr.every(o=>V[k](o)==='');
  return {ok:allOk,warn:!allOk};
@@ -432,30 +359,24 @@ function render(){
    <label>Protokol</label><select id="cm"><option value="https">HTTPS (443)</option><option value="http">HTTP (80)</option></select>
    <div class="bar" style="padding:10px 0;border:none">
      <button onclick="runClient()">Sambungkan</button>
-     <button onclick="pingTest()">Ping 8.8.8.8</button>
+     <button onclick="pingTest()">Ping</button>
+     <button onclick="clearClient()">Clear</button>
    </div>
    <label>Host ping</label><input id="cp2" value="8.8.8.8" autocapitalize="none">
    <div id="co" style="margin-top:10px"></div>
   </div>`);
  }else if(cur==='cli'){
-  b=win('Konfigurasi CLI (RouterOS)',`<div class="bar"><button onclick="copyCLI()">Copy</button></div><div class="cli" id="cliout">${esc(genCLI())}</div>`);
+  b=win('Konfigurasi CLI (RouterOS)',`<div class="bar"><button onclick="copyCLI()">Copy</button><button onclick="refreshCLI()">↻ Refresh</button></div><div class="cli" id="cliout">${esc(genCLI())}</div>`);
  }else if(cur==='ms'){
   const m=mission(),n=m.filter(x=>x[1]).length;
-  const cfgSummary=[
-    ['IP',R.addr.length],['Pool',R.pool.length],['DHCP',R.dhcp.length],
-    ['Hotspot',R.hs.length],['User',R.user.length],['Firewall',R.fw.length],['DNS',R.dns.length]
-  ].map(([k,v])=>`<span style="display:inline-block;background:#0a246a;color:#fff;padding:2px 8px;border-radius:10px;margin:2px;font-size:11px">${k}: ${v}</span>`).join('');
-  b=win('Misi: hotspot dan blokir situs',`<div class="p">
-    <b>Skor ${n}/${m.length}</b>
-    <div class="hint" style="padding:4px 0">Buat hotspot di wlan1 sampai klien bisa login, lalu blokir ${T.join(' dan ')}.</div>
-    <div style="margin:8px 0">${cfgSummary}</div>
-   </div>`
+  const cfgSummary=[['IP',R.addr.length],['Pool',R.pool.length],['DHCP',R.dhcp.length],['Hotspot',R.hs.length],['User',R.user.length],['Firewall',R.fw.length],['DNS',R.dns.length]].map(([k,v])=>`<span style="display:inline-block;background:#0a246a;color:#fff;padding:2px 8px;border-radius:10px;margin:2px;font-size:11px">${k}: ${v}</span>`).join('');
+  b=win('Misi',`<div class="p"><b>Skor ${n}/${m.length}</b><div class="hint" style="padding:4px 0">Buat hotspot di wlan1 sampai klien bisa login, lalu blokir ${T.join(' dan ')}.</div><div style="margin:8px 0">${cfgSummary}</div></div>`
    +m.map(x=>`<div class="row"><span>${x[1]?'✅':'⬜'} ${x[0]}</span></div>`).join('')
    +`<div class="bar" style="flex-wrap:wrap">
      <button onclick="exportCfg()">⬇ Export</button>
-     <label style="margin:0;font-size:12px;color:#222"><input type="file" accept=".json" onchange="importCfg(event)" style="display:none" id="impf">⬆ Import</label>
      <button onclick="$('impf').click()">⬆ Import</button>
      <button onclick="reset()">Reset</button>
+     <input type="file" accept=".json" onchange="importCfg(event)" style="display:none" id="impf">
    </div>`
    +`<div class="bar" style="flex-wrap:wrap">
      <span style="font-size:12px;font-weight:bold">Troubleshoot:</span>
@@ -467,38 +388,28 @@ function render(){
   if(cur==='dns')top=`<div class="p" style="border-bottom:1px solid #aaa">
     <b>DNS Settings</b>
     <label>Servers</label><input value="${esc(R.dnsSet.servers)}" placeholder="8.8.8.8" autocapitalize="none" onchange="R.dnsSet.servers=this.value.trim();save();render()">
-    <div class="helper">DNS upstream, misal 8.8.8.8 atau 1.1.1.1</div>
+    <div class="helper">DNS upstream, misal 8.8.8.8</div>
     <label class="chk"><input type="checkbox" ${R.dnsSet.allow?'checked':''} onchange="R.dnsSet.allow=this.checked;save();render()">Allow Remote Requests</label>
-    <div class="helper">Wajib aktif agar klien bisa resolve DNS lewat router</div>
+    <div class="helper">Wajib aktif agar klien bisa resolve DNS</div>
    </div>`;
-  const rows=R[cur].map((o,i)=>`<div class="row"><span>${i}. ${Object.entries(o).filter(e=>e[1]).map(([a,v])=>`<b>${a}</b>=${esc(v)}`).join(' ')}</span><button onclick="del('${cur}',${i})">✕</button></div>`).join('')||'<div class="hint">(kosong)</div>';
+  const rows=R[cur].map((o,i)=>`<div class="row"><span>${i}. ${Object.entries(o).filter(e=>e[1]).map(([a,v])=>`<b>${a}</b>=${esc(v)}`).join(' ')}</span><span class="rowacts"><button onclick="form('${cur}',${i})" title="Edit">✎</button><button onclick="dup('${cur}',${i})" title="Duplicate">⧉</button><button onclick="del('${cur}',${i})" title="Hapus">✕</button></span></div>`).join('')||'<div class="hint">(kosong)</div>';
   b=win(s.t,top+`<div class="bar"><button onclick="form('${cur}')">＋ Add</button><span class="hint" style="padding:0">${R[cur].length} item</span></div>`+rows)+(H[cur]?`<div class="hint on-dark">${H[cur]}</div>`:'');
  }
  $('v').innerHTML=b;
-
- // floating progress
  const m=mission(),n=m.filter(x=>x[1]).length;
  let fp=$('fp');
  if(!fp){fp=document.createElement('div');fp.id='fp';fp.className='prog';fp.onclick=()=>{cur='ms';render()};document.body.appendChild(fp)}
  fp.innerHTML=`<span>Misi ${n}/${m.length}</span><div class="bar-in"><div style="width:${(n/m.length*100).toFixed(0)}%"></div></div><span>${n===m.length?'✅ Selesai':'→'}</span>`;
 }
-function copyCLI(){
- const t=genCLI();
- if(navigator.clipboard){navigator.clipboard.writeText(t).then(()=>toast('CLI dicopy'),()=>toast('Gagal copy'))}
- else toast('Copy manual dari tab CLI');
-}
-function toggleDark(){
- document.body.classList.toggle('dark');
- localStorage.setItem('mtDark',document.body.classList.contains('dark')?'1':'0');
-}
+function toggleDark(){document.body.classList.toggle('dark');localStorage.setItem('mtDark',document.body.classList.contains('dark')?'1':'0')}
 if(localStorage.getItem('mtDark')==='1')document.body.classList.add('dark');
 
-// keyboard shortcuts
 document.addEventListener('keydown',e=>{
  if(e.key==='Escape')closeD();
- if(e.key==='Enter'&&$('dlg')){
-   const active=document.activeElement;
-   if(active&&active.tagName==='INPUT'){e.preventDefault();const btn=document.querySelector('#dlg button');if(btn)btn.click();}
+ if(e.key==='Enter'&&$('dlg')&&document.activeElement.tagName==='INPUT'){
+   e.preventDefault();
+   const btn=[...document.querySelectorAll('#dlg button')].find(b=>b.textContent==='OK');
+   if(btn)btn.click();
  }
 });
 
